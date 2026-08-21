@@ -1,0 +1,38 @@
+{
+  "name": "mojikit",
+  "type": "module",
+  "version": "0.0.1",
+  "description": "",
+  "scripts": {
+    "build": "pnpm tsdown",
+    "dev": "pnpm tsdown --watch",
+    "typecheck": "pnpm tsc --noEmit",
+    "test": "pnpm vitest"
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./inspector": "./dist/Inspector.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@10.15.0",
+  "devDependencies": {
+    "astro": "^5.16.7",
+    "tsdown": "0.19.0-beta.5",
+    "@the_dissidents/minimal-jsx-runtime": "^0.0.3"
+  },
+  "dependencies": {
+    "happy-dom": "^20.1.0",
+    "wcwidth": "^1.0.1"
+  }
+}
