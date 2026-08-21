@@ -1,8 +1,8 @@
 {
-  "name": "mojikit",
+  "name": "@the_dissidents/mojikit",
   "type": "module",
   "version": "0.0.1",
-  "description": "",
+  "description": "Build time rule-based mojikumi for Astro",
   "scripts": {
     "build": "pnpm tsdown",
     "dev": "pnpm tsdown --watch",
