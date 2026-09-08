@@ -1,7 +1,7 @@
 {
   "name": "@the_dissidents/mojikit",
   "type": "module",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Build time rule-based mojikumi for Astro",
   "scripts": {
     "build": "pnpm tsdown",
@@ -25,14 +25,17 @@
   "keywords": [],
   "author": "",
   "license": "AGPL-3.0-only",
-  "packageManager": "pnpm@10.15.0",
+  "packageManager": "pnpm@12.3.4",
   "devDependencies": {
-    "astro": "7.2.2",
-    "tsdown": "0.19.0-beta.5",
-    "@the_dissidents/minimal-jsx-runtime": "^0.0.3"
+    "tsdown": "^0.23.0",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "happy-dom": "^20.1.0",
     "wcwidth": "^1.0.1"
+  },
+  "peerDependencies": {
+    "@the_dissidents/minimal-jsx-runtime": "^0.0.3",
+    "astro": "^7.2.2"
   }
 }
