@@ -140,7 +140,6 @@ type Range = {
     tagName: string,
     classnames: string[],
     flags: string[],
-    notes?: string,
     scores?: Record<string, number>,
     replace?: string
 };
@@ -174,8 +173,6 @@ function wrapRanges(node: Text, ranges: Range[], doc: Document, isDev: boolean) 
         const middleNode = node.splitText(range.start);
         const element = doc.createElement(range.tagName);
         range.classnames.forEach((x) => element.classList.add(x));
-        if (range.notes)
-            element.dataset['note'] = range.notes;
 
         if (isDev && range.flags.length > 0)
             element.dataset['mjk-flags'] = range.flags.join(' ');
@@ -227,7 +224,9 @@ export function mojikit(opt: Options) {
                     let ruleset: CharacterRuleset;
                     const scores: Record<string, number> = {};
 
-                    if (x.match.filter((x) => x).length == 1) {
+                    if (x.match.filter(Boolean).length == 1) {
+                        // only one ruleset's heuristics matches this character.
+                        // we simply assume that this language applies to it
                         const idx = x.match.indexOf(true);
                         ruleset = opt.rulesets[idx];
                         opt.rulesets.forEach((r, j) => {
@@ -235,6 +234,8 @@ export function mojikit(opt: Options) {
                                 scores[r.tagName] = j === idx ? (r.weight ?? 1) : 0;
                         });
                     } else {
+                        // otherwise, we look at the surrounding characters
+                        // and vote to determine a winning ruleset
                         if (opt.rulesets.length == 0) return;
 
                         const window = m.slice(

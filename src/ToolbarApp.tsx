@@ -21,6 +21,15 @@ const AUX_STYLE_ID = "mojikit-aux-style";
 const TOOLTIP_ID = "mojikit-tooltip";
 const MARK_ATTR = "data-mjk-viz";
 
+const FLAG_LABELS: Record<string, string> = {
+    sql: "squeeze left",
+    sqm: "squeeze middle",
+    sqr: "squeeze right",
+    nbb: "no-break before",
+    nba: "no-break after",
+    punct: "punctuation",
+};
+
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
     s /= 100;
     l /= 100;
@@ -48,17 +57,17 @@ export default defineToolbarApp({
         let palette = new Map<string, PaletteEntry>();
         let enabled = true;
         let windowElement: HTMLElement | null = null;
-        let active = false;
         let dragging = false;
+        let flagFilter = new Set<string>();
+        let knownFlags: string[] = [];
 
         buildUI();
         buildPalette();
+        renderFlagFilters();
         ensureAuxStyle();
-        setupOutsideClick();
         setupDrag();
 
         app.onToggled(({ state }) => {
-            active = state;
             if (state) refresh();
             else removeVisualization();
         });
@@ -76,6 +85,7 @@ export default defineToolbarApp({
 
         function onNavigation() {
             buildPalette();
+            renderFlagFilters();
             refresh();
         }
 
@@ -125,14 +135,15 @@ export default defineToolbarApp({
 
         function buildUI() {
             windowElement = document.createElement("astro-dev-toolbar-window");
+            windowElement.style.minWidth = "320px";
+            windowElement.style.maxWidth = "480px";
             windowElement.innerHTML = `
                 <style>
                     .mjk-panel {
                         color: #fff;
                         font-family: system-ui, sans-serif;
                         font-size: 14px;
-                        min-width: 320px;
-                        max-width: 480px;
+                        width: 100%;
                     }
                     * { box-sizing: border-box; }
                     header {
@@ -180,6 +191,27 @@ export default defineToolbarApp({
                         user-select: none;
                     }
                     label.mjk-toggle { cursor: pointer; }
+                    .mjk-flags { margin-bottom: 16px; }
+                    .mjk-flags-title {
+                        margin: 0 0 6px;
+                        font-size: 11px;
+                        text-transform: uppercase;
+                        letter-spacing: 0.05em;
+                        color: rgba(145, 152, 173, 1);
+                    }
+                    #mjk-flag-filters {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 6px 12px;
+                    }
+                    label.mjk-flag {
+                        display: flex;
+                        align-items: center;
+                        gap: 5px;
+                        font-size: 12px;
+                        cursor: pointer;
+                        user-select: none;
+                    }
                 </style>
                 <div class="mjk-panel">
                     <header>
@@ -193,6 +225,10 @@ export default defineToolbarApp({
                         Each character is tinted by the mix of ruleset scores.
                         Hover a character to inspect its scores.
                     </p>
+                    <section class="mjk-flags">
+                        <p class="mjk-flags-title">Filter by flags (any)</p>
+                        <div id="mjk-flag-filters"></div>
+                    </section>
                     <div id="mjk-legend"></div>
                 </div>
             `;
@@ -203,17 +239,6 @@ export default defineToolbarApp({
                 enabled = (e.target as HTMLInputElement).checked;
                 refresh();
             });
-        }
-
-        function setupOutsideClick() {
-            function onPageClick(event: Event) {
-                if (!active) return;
-                const target = event.target as Element | null;
-                if (!target || typeof target.closest !== "function") return;
-                if (target.closest("astro-dev-toolbar")) return;
-                app.toggleState({ state: false });
-            }
-            document.addEventListener("click", onPageClick, true);
         }
 
         function setupDrag() {
@@ -282,6 +307,48 @@ export default defineToolbarApp({
                     `,
                 )
                 .join("");
+        }
+
+        function discoverFlags(): string[] {
+            const set = new Set<string>();
+            document.querySelectorAll(`[data-mjk-flags]`).forEach((el) => {
+                const raw = el.getAttribute("data-mjk-flags");
+                if (!raw) return;
+                raw.split(/\s+/)
+                    .filter(Boolean)
+                    .forEach((f) => set.add(f));
+            });
+            return [...set].sort();
+        }
+
+        function renderFlagFilters() {
+            const container = windowElement?.querySelector("#mjk-flag-filters");
+            if (!container) return;
+            knownFlags = discoverFlags();
+            if (knownFlags.length === 0) {
+                container.innerHTML = `<div class="mjk-empty">No flags found on this page.</div>`;
+                return;
+            }
+            container.innerHTML = knownFlags
+                .map((f) => {
+                    const checked = flagFilter.has(f) ? "checked" : "";
+                    return `<label class="mjk-flag">
+                        <input type="checkbox" data-flag="${escapeHtml(f)}" ${checked} />
+                        <span>${escapeHtml(FLAG_LABELS[f] ?? f)}</span>
+                    </label>`;
+                })
+                .join("");
+            container
+                .querySelectorAll<HTMLInputElement>("input[type='checkbox']")
+                .forEach((input) => {
+                    input.addEventListener("change", () => {
+                        const flag = input.dataset.flag;
+                        if (!flag) return;
+                        if (input.checked) flagFilter.add(flag);
+                        else flagFilter.delete(flag);
+                        refresh();
+                    });
+                });
         }
 
         function blend(scores: Record<string, number>): string {
@@ -365,9 +432,21 @@ export default defineToolbarApp({
             }
             ensureVizStyle();
             palette.forEach((p) => (p.count = 0));
+            document.querySelectorAll(`[${MARK_ATTR}]`).forEach((el) => {
+                el.removeAttribute(MARK_ATTR);
+                (el as HTMLElement).style.removeProperty("--mjk-bg");
+            });
             document.querySelectorAll(`[data-mjk-scores]`).forEach((el) => {
                 const raw = el.getAttribute("data-mjk-scores");
                 if (!raw) return;
+
+                if (flagFilter.size > 0) {
+                    const flags = (el.getAttribute("data-mjk-flags") ?? "")
+                        .split(/\s+/)
+                        .filter(Boolean);
+                    if (!flags.some((f) => flagFilter.has(f))) return;
+                }
+
                 let scores: Record<string, number>;
                 try {
                     scores = JSON.parse(raw);
