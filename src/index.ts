@@ -87,7 +87,8 @@ type Character = {
     from: Text,
     flags: string[],
     tagName?: string,
-    notes?: string,
+    ambiguous?: boolean,
+    scores?: Record<string, number>,
     classnames: (string | undefined)[],
 };
 
@@ -140,6 +141,7 @@ type Range = {
     classnames: string[],
     flags: string[],
     notes?: string,
+    scores?: Record<string, number>,
     replace?: string
 };
 
@@ -177,6 +179,9 @@ function wrapRanges(node: Text, ranges: Range[], doc: Document, isDev: boolean) 
 
         if (isDev && range.flags.length > 0)
             element.dataset['mjk-flags'] = range.flags.join(' ');
+
+        if (isDev && range.scores)
+            element.dataset['mjk-scores'] = JSON.stringify(range.scores);
 
         middleNode.parentNode!.insertBefore(element, middleNode);
         element.appendChild(middleNode);
@@ -220,9 +225,15 @@ export function mojikit(opt: Options) {
 
                 m.forEach((x, i) => {
                     let ruleset: CharacterRuleset;
+                    const scores: Record<string, number> = {};
 
                     if (x.match.filter((x) => x).length == 1) {
-                        ruleset = opt.rulesets[x.match.indexOf(true)];
+                        const idx = x.match.indexOf(true);
+                        ruleset = opt.rulesets[idx];
+                        opt.rulesets.forEach((r, j) => {
+                            if (r.tagName)
+                                scores[r.tagName] = j === idx ? (r.weight ?? 1) : 0;
+                        });
                     } else {
                         if (opt.rulesets.length == 0) return;
 
@@ -238,19 +249,23 @@ export function mojikit(opt: Options) {
                             }))
                             .sort((a, b) => b.score - a.score);
 
+                        histogram.forEach(({ ruleset: r, score }) => {
+                            if (r.tagName)
+                                scores[r.tagName] = score;
+                        });
+
                         if (histogram.length > 1
                          && histogram[1].score > 0
                          && histogram[0].score
                                 < histogram[1].score * (opt.ambiguousThreshold ?? 1.5))
                         {
-                            ambiguous++;
-                            x.notes = `${histogram[0].ruleset.tagName}=${histogram[0].score}, ${histogram[1].ruleset.tagName}=${histogram[1].score}`;
-                            if (opt.classnames.ambiguous)
-                                x.classnames.push(opt.classnames.ambiguous);
+                            x.ambiguous = true;
                         }
 
                         ruleset = histogram[0].ruleset;
                     }
+
+                    x.scores = scores;
 
                     if (ruleset.squeezeLeft?.test(x.ch)) {
                         x.flags.push('sql');
@@ -329,7 +344,11 @@ export function mojikit(opt: Options) {
                     if (x.flags.includes('nba'))
                         replace = (replace ?? x.ch) + '\u2060';
                     
-                    if (x.tagName && (x.classnames.length > 0 || x.notes || opt.isDev)) {
+                    if (x.tagName && (x.classnames.length > 0 || opt.isDev)) {
+                        if (x.ambiguous) ambiguous++;
+                        if (opt.classnames.ambiguous && x.ambiguous)
+                            x.classnames.push(opt.classnames.ambiguous);
+
                         if (!modifications.has(x.from))
                             modifications.set(x.from, []);
 
@@ -339,7 +358,7 @@ export function mojikit(opt: Options) {
                             tagName: x.tagName,
                             classnames: x.classnames.filter((x) => !!x) as string[],
                             flags: x.flags,
-                            notes: x.notes,
+                            scores: x.scores,
                             replace
                         });
                     }
@@ -351,6 +370,19 @@ export function mojikit(opt: Options) {
             
             for (const [t, r] of modifications)
                 wrapRanges(t, r, dom, !!opt.isDev);
+        }
+
+        if (opt.isDev) {
+            const config = dom.createElement('script');
+            config.setAttribute('type', 'application/json');
+            config.setAttribute('id', 'mojikit-config');
+            config.textContent = JSON.stringify({
+                rulesets: opt.rulesets.map((r) => ({ tagName: r.tagName, weight: r.weight })),
+                classnames: opt.classnames,
+                halfDetectionWindow: opt.halfDetectionWindow,
+                ambiguousThreshold: opt.ambiguousThreshold,
+            });
+            (dom.head ?? dom.body)?.appendChild(config);
         }
 
         return new Response(dom.documentElement.outerHTML, {
