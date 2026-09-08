@@ -4,10 +4,17 @@ import type { MiddlewareHandler } from "astro";
 export type Options = {
     isDev?: boolean,
     rulesets: CharacterRuleset[],
+
+    /** Half detection window. */
     halfDetectionWindow: number,
+
+    /** Decay base `a` in the detection window. E.g. a character that is `n` character away from the inspected one gets a multiplier of `a^n`. */
+    weightDecay?: number,
+
     startAtElement?: string,
     warnIfStartElementNotFound?: boolean,
     ambiguousThreshold?: number,
+
     classnames: {
         squeezeLeft?: string,
         squeezeRight?: string,
@@ -88,7 +95,8 @@ type Character = {
     flags: string[],
     tagName?: string,
     ambiguous?: boolean,
-    scores?: Record<string, number>,
+    matches: string[],
+    scores: Record<string, number>,
     classnames: (string | undefined)[],
 };
 
@@ -112,7 +120,7 @@ function extract(body: Element) {
                 return;
             for (let i = 0; i < n.data.length; i++)
                 current.chars.push({
-                    ch: n.data[i],
+                    ch: n.data[i], scores: {}, matches: [],
                     pos: i, from: n, flags: [], classnames: []
                 });
         }
@@ -140,6 +148,7 @@ type Range = {
     tagName: string,
     classnames: string[],
     flags: string[],
+    matches: string[],
     scores?: Record<string, number>,
     replace?: string
 };
@@ -174,11 +183,14 @@ function wrapRanges(node: Text, ranges: Range[], doc: Document, isDev: boolean) 
         const element = doc.createElement(range.tagName);
         range.classnames.forEach((x) => element.classList.add(x));
 
-        if (isDev && range.flags.length > 0)
-            element.dataset['mjk-flags'] = range.flags.join(' ');
-
-        if (isDev && range.scores)
-            element.dataset['mjk-scores'] = JSON.stringify(range.scores);
+        if (isDev) {
+            if (range.flags.length > 0)
+                element.dataset['mjk-flags'] = range.flags.join(' ');
+            if (range.matches.length > 0)
+                element.dataset['mjk-matches'] = range.matches.join(' ');
+            if (range.scores)
+                element.dataset['mjk-scores'] = JSON.stringify(range.scores);
+        }
 
         middleNode.parentNode!.insertBefore(element, middleNode);
         element.appendChild(middleNode);
@@ -187,7 +199,54 @@ function wrapRanges(node: Text, ranges: Range[], doc: Document, isDev: boolean) 
     });
 }
 
+type MatchedCharacter = Character & {match: boolean[]};
+
 export function mojikit(opt: Options) {
+    function vote(m: MatchedCharacter[], i: number) {
+        if (opt.rulesets.length == 0) return [];
+        const x = m[i];
+
+        x.scores = {};
+        const window = m.slice(
+            Math.max(0, i - opt.halfDetectionWindow),
+            Math.min(m.length, i + opt.halfDetectionWindow)
+        );
+        const histogram = opt.rulesets
+            .map((r, j) => ({
+                ruleset: r, 
+                score: window.reduce((p, c, i) => {
+                    let score = c.match[j] ? 1 : 0;
+
+                    // weight only applies to unanimous cases
+                    if (c.match.filter(Boolean).length == 1) {
+                        const idx = c.match.indexOf(true);
+                        if (idx == j) score = r.weight ?? 1;
+                    }
+
+                    const multiplier = opt.weightDecay
+                        ? Math.pow(opt.weightDecay, 
+                            Math.abs(i - opt.halfDetectionWindow))
+                        : 1;
+                    return p + score * multiplier;
+                }, 0)
+            }))
+            .sort((a, b) => b.score - a.score);
+
+        histogram.forEach(({ ruleset: r, score }) => {
+            if (r.tagName)
+                x.scores[r.tagName] = score;
+        });
+
+        if (histogram.length > 1
+            && histogram[1].score > 0
+            && histogram[0].score
+                < histogram[1].score * (opt.ambiguousThreshold ?? 1.5))
+        {
+            x.ambiguous = true;
+        }
+        return histogram;
+    }
+
     return (async (ctx, next) => {
         const response = await next();
         const contentType = response.headers.get("content-type");
@@ -217,56 +276,29 @@ export function mojikit(opt: Options) {
                     const explicit = opt.rulesets.map((r) => r.heuristic?.test(x.ch));
                     const noExplicitMatch = !explicit.find((x) => !!x);
                     const match = explicit.map((m) => m === undefined ? noExplicitMatch : m);
-                    return { ...x, match }
+                    x.matches = opt.rulesets
+                        .map((x, i) => explicit[i] ? x.tagName : undefined)
+                        .filter(Boolean) as string[];
+                    return { ...x, match };
                 });
 
                 m.forEach((x, i) => {
                     let ruleset: CharacterRuleset;
-                    const scores: Record<string, number> = {};
 
                     if (x.match.filter(Boolean).length == 1) {
-                        // only one ruleset's heuristics matches this character.
+                        // when only one ruleset's heuristics matches this character.
                         // we simply assume that this language applies to it
                         const idx = x.match.indexOf(true);
                         ruleset = opt.rulesets[idx];
-                        opt.rulesets.forEach((r, j) => {
-                            if (r.tagName)
-                                scores[r.tagName] = j === idx ? (r.weight ?? 1) : 0;
-                        });
+                        
+                        // in dev mode we still compute the vote for visualization
+                        if (opt.isDev) vote(m, i);
+
                     } else {
-                        // otherwise, we look at the surrounding characters
-                        // and vote to determine a winning ruleset
-                        if (opt.rulesets.length == 0) return;
-
-                        const window = m.slice(
-                            Math.max(0, i - opt.halfDetectionWindow),
-                            Math.min(m.length, i + opt.halfDetectionWindow)
-                        );
-                        const histogram = opt.rulesets
-                            .map((r, j) => ({
-                                ruleset: r, 
-                                score: window.reduce(
-                                    (p, c) => p+ (c.match[j] ? (r.weight ?? 1) : 0), 0)
-                            }))
-                            .sort((a, b) => b.score - a.score);
-
-                        histogram.forEach(({ ruleset: r, score }) => {
-                            if (r.tagName)
-                                scores[r.tagName] = score;
-                        });
-
-                        if (histogram.length > 1
-                         && histogram[1].score > 0
-                         && histogram[0].score
-                                < histogram[1].score * (opt.ambiguousThreshold ?? 1.5))
-                        {
-                            x.ambiguous = true;
-                        }
-
+                        // otherwise we compute a vote result based on nearby characters
+                        const histogram = vote(m, i);
                         ruleset = histogram[0].ruleset;
                     }
-
-                    x.scores = scores;
 
                     if (ruleset.squeezeLeft?.test(x.ch)) {
                         x.flags.push('sql');
@@ -291,6 +323,7 @@ export function mojikit(opt: Options) {
                     if (ruleset.tagName && (x.flags.length > 0 || opt.isDev))
                         x.tagName = ruleset.tagName;
                 });
+
 
                 m.forEach((x, i) => {
                     const prev = m[i-1];
@@ -346,9 +379,11 @@ export function mojikit(opt: Options) {
                         replace = (replace ?? x.ch) + '\u2060';
                     
                     if (x.tagName && (x.classnames.length > 0 || opt.isDev)) {
-                        if (x.ambiguous) ambiguous++;
-                        if (opt.classnames.ambiguous && x.ambiguous)
-                            x.classnames.push(opt.classnames.ambiguous);
+                        if (x.classnames.length > 0 && x.ambiguous) {
+                            ambiguous++;
+                            if (opt.classnames.ambiguous)
+                                x.classnames.push(opt.classnames.ambiguous);
+                        }
 
                         if (!modifications.has(x.from))
                             modifications.set(x.from, []);
@@ -357,8 +392,9 @@ export function mojikit(opt: Options) {
                             start: x.pos,
                             end: x.ch.length + x.pos,
                             tagName: x.tagName,
-                            classnames: x.classnames.filter((x) => !!x) as string[],
+                            classnames: x.classnames.filter(Boolean) as string[],
                             flags: x.flags,
+                            matches: x.matches,
                             scores: x.scores,
                             replace
                         });

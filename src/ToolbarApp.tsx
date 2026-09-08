@@ -1,3 +1,5 @@
+// mostly written by DeepSeek v4 Pro
+
 import { defineToolbarApp } from "astro/toolbar";
 
 type RulesetConfig = { tagName?: string; weight?: number };
@@ -505,6 +507,7 @@ export default defineToolbarApp({
                 return { tag, score, pct, hex: p.hex };
             });
             const flags = el.getAttribute("data-mjk-flags");
+            const matches = el.getAttribute("data-mjk-matches");
             const note = el.getAttribute("data-note");
             const classes = (el.getAttribute("class") ?? "")
                 .split(/\s+/)
@@ -518,21 +521,22 @@ export default defineToolbarApp({
             }
 
             tooltip.innerHTML = `
-                <div class="mjk-tt-title">&ldquo;${escapeHtml(
+                <div class="mjk-tt-title">${escapeHtml(
                     el.textContent ?? "",
-                )}&rdquo; <code>${escapeHtml(el.tagName.toLowerCase())}</code></div>
+                )} <code>${escapeHtml(el.tagName.toLowerCase())}</code></div>
                 ${rows
                     .map(
                         (r) => `
                             <div class="mjk-tt-row">
                                 <span class="mjk-swatch" style="background:${r.hex};width:10px;height:10px;border-radius:3px;"></span>
                                 <code>${escapeHtml(r.tag)}</code>
-                                <span class="mjk-tt-score">${r.score}</span>
+                                <span class="mjk-tt-score">${r.score.toFixed(3)}</span>
                                 <span class="mjk-tt-pct">${r.pct}%</span>
                             </div>
                         `,
                     )
                     .join("")}
+                ${matches ? `<div class="mjk-tt-meta">explicit matches: ${escapeHtml(matches)}</div>` : ""}
                 ${flags ? `<div class="mjk-tt-meta">flags: ${escapeHtml(flags)}</div>` : ""}
                 ${classes.length ? `<div class="mjk-tt-meta">classes: ${escapeHtml(classes.join(" "))}</div>` : ""}
                 ${note ? `<div class="mjk-tt-meta">note: ${escapeHtml(note)}</div>` : ""}
