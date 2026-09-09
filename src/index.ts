@@ -104,6 +104,33 @@ class Context {
     chars: Character[] = [];
 };
 
+const whitespace = /[ \n\t]/;
+
+function lineWhitespacePositions(data: string) {
+    const ignored = new Set<number>();
+    let lineStart = 0;
+
+    for (;;) {
+        const nl = data.indexOf('\n', lineStart);
+        const lineEnd = nl === -1 ? data.length : nl;
+
+        if (nl !== -1) ignored.add(nl);
+
+        let i = lineStart;
+        while (i < lineEnd && whitespace.test(data[i]))
+            ignored.add(i++);
+
+        let j = lineEnd - 1;
+        while (j > i && whitespace.test(data[j]))
+            ignored.add(j--);
+
+        if (nl === -1) break;
+        lineStart = nl + 1;
+    }
+
+    return ignored;
+}
+
 function extract(body: Element) {
     const contexts: Context[] = [];
     let current = new Context();
@@ -118,11 +145,15 @@ function extract(body: Element) {
         if (n instanceof Text) {
             if (n.data.trim().length == 0)
                 return;
-            for (let i = 0; i < n.data.length; i++)
+            const ignored = lineWhitespacePositions(n.data);
+            for (let i = 0; i < n.data.length; i++) {
+                if (ignored.has(i))
+                    continue;
                 current.chars.push({
                     ch: n.data[i], scores: {}, matches: [],
                     pos: i, from: n, flags: [], classnames: []
                 });
+            }
         }
         if (n instanceof Element) {
             if (ignore.has(n.tagName.toLowerCase()))

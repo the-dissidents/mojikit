@@ -8,7 +8,7 @@ export const InspectorIntegration: AstroIntegration = {
       addDevToolbarApp({
         id: "mojikit",
         name: "Mojikit",
-        icon: "🚀",
+        icon: "📃",
         entrypoint: fileURLToPath(new URL('./ToolbarApp.js', import.meta.url))
       });
     },
