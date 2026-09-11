@@ -16,6 +16,14 @@ import { mojikit, SimplifiedChineseRules, LatinRules } from "mojikit";
 
 export const onRequest = defineMiddleware(
   mojikit({
+    // Astro middleware doesn't have a browser context
+    // a polyfill such as `happy-dom` is required
+    domAdapter: async (html) => {
+      const { Window } = await import("happy-dom");
+      const dom = new Window().document;
+      dom.write(html);
+      return dom as unknown as Document;
+    },
     rulesets: [SimplifiedChineseRules, LatinRules],
     halfDetectionWindow: 5,
     classnames: {
@@ -30,6 +38,24 @@ export const onRequest = defineMiddleware(
 ```
 
 The middleware only touches responses with a `text/html` content type.
+
+## Standalone usage
+
+The core processor is also exposed directly and can be used outside Astro:
+
+```ts
+import { processHTML, SimplifiedChineseRules, LatinRules } from "mojikit";
+
+const output = await processHTML(inputHtml, {
+  rulesets: [SimplifiedChineseRules, LatinRules],
+  halfDetectionWindow: 5,
+  classnames: { /* ... */ },
+});
+```
+
+When a browser DOM is available (`DOMParser`), it uses the native DOM and does
+not load happy-dom. In a Node context without a DOM it falls back to happy-dom,
+which is loaded lazily.
 
 ## How it works
 
