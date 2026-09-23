@@ -265,14 +265,16 @@ export function processDocument(dom: Document, opt: Options): void {
         const x = m[i];
 
         x.scores = {};
+        const start = Math.max(0, i - opt.halfDetectionWindow);
         const window = m.slice(
-            Math.max(0, i - opt.halfDetectionWindow),
-            Math.min(m.length, i + opt.halfDetectionWindow)
+            start,
+            Math.min(m.length, i + opt.halfDetectionWindow + 1)
         );
+        const center = i - start;
         const histogram = opt.rulesets
             .map((r, j) => ({
                 ruleset: r, 
-                score: window.reduce((p, c, i) => {
+                score: window.reduce((p, c, k) => {
                     let score = c.match[j] ? 1 : 0;
 
                     // weight only applies to unanimous cases
@@ -282,8 +284,7 @@ export function processDocument(dom: Document, opt: Options): void {
                     }
 
                     const multiplier = opt.weightDecay
-                        ? Math.pow(opt.weightDecay, 
-                            Math.abs(i - opt.halfDetectionWindow))
+                        ? Math.pow(opt.weightDecay, Math.abs(k - center))
                         : 1;
                     return p + score * multiplier;
                 }, 0)
@@ -370,7 +371,6 @@ export function processDocument(dom: Document, opt: Options): void {
             if (ruleset.tagName && (x.flags.length > 0 || opt.isDev))
                 x.tagName = ruleset.tagName;
         });
-
 
         m.forEach((x, i) => {
             const prev = m[i-1];
