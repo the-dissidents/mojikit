@@ -50,8 +50,10 @@ export type CharacterRuleset = {
 
     /**
      * The custom element name that is used to wrap characters that this ruleset applies to, e.g. `mjk-chs` or `mjk-lat`. For the definition of valid custom element names, refer to https://html.spec.whatwg.org/multipage/custom-elements.html#custom-elements-core-concepts.
+     * 
+     * Note that only *those characters that need mojikumi treatment* are wrapped. This is because the algorithm only tries its best to ensure the classification is correct for characters that matter, not all characters.
      */
-    tagName?: string,
+    tagName: string,
 
     addClass?: RegExp,
 
@@ -199,7 +201,7 @@ function extract(body: Element) {
 type Range = {
     start: number,
     end: number,
-    tagName: string,
+    tagName?: string,
     classnames: string[],
     flags: string[],
     matches: string[],
@@ -230,11 +232,13 @@ function wrapRanges(node: Text, ranges: Range[], doc: Document, isDev: boolean) 
     if (prev) newRanges.push(prev);
 
     sortedRanges.forEach((range) => {
+        if (!range.tagName && !isDev) return;
+
         if (range.end < node.data.length)
             node.splitText(range.end);
 
         const middleNode = node.splitText(range.start);
-        const element = doc.createElement(range.tagName);
+        const element = doc.createElement(range.tagName ?? 'mjk-debug');
         range.classnames.forEach((x) => element.classList.add(x));
 
         if (isDev) {
@@ -348,27 +352,17 @@ export function processDocument(dom: Document, opt: Options): void {
                 ruleset = histogram[0].ruleset;
             }
 
-            if (ruleset.squeezeLeft?.test(x.ch)) {
-                x.flags.push('sql');
-            }
-            if (ruleset.squeezeMiddle?.test(x.ch)) {
-                x.flags.push('sqm');
-            }
-            if (ruleset.squeezeRight?.test(x.ch)) {
-                x.flags.push('sqr');
-            }
-            if (ruleset.noBreakBefore?.test(x.ch)) {
-                x.flags.push('nbb');
-            }
-            if (ruleset.noBreakAfter?.test(x.ch)) {
-                x.flags.push('nba');
-            }
+            if   (ruleset.squeezeLeft?.test(x.ch)) x.flags.push('sql');
+            if (ruleset.squeezeMiddle?.test(x.ch)) x.flags.push('sqm');
+            if  (ruleset.squeezeRight?.test(x.ch)) x.flags.push('sqr');
+            if (ruleset.noBreakBefore?.test(x.ch)) x.flags.push('nbb');
+            if  (ruleset.noBreakAfter?.test(x.ch)) x.flags.push('nba');
 
             if (x.flags.length > 0 || ruleset.addClass?.test(x.ch)) {
                 x.flags.push('punct');
             }
 
-            if (ruleset.tagName && (x.flags.length > 0 || opt.isDev))
+            if (ruleset.tagName && x.flags.length > 0)
                 x.tagName = ruleset.tagName;
         });
 
@@ -424,8 +418,10 @@ export function processDocument(dom: Document, opt: Options): void {
                 replace = '\u2060' + (replace ?? x.ch);
             if (x.flags.includes('nba'))
                 replace = (replace ?? x.ch) + '\u2060';
+
+            // generate the modifications
             
-            if (x.tagName && (x.classnames.length > 0 || opt.isDev)) {
+            if ((x.tagName && x.classnames.length > 0) || opt.isDev) {
                 if (x.classnames.length > 0 && x.ambiguous) {
                     ambiguous++;
                     if (opt.classnames.ambiguous)

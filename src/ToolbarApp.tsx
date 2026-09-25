@@ -403,8 +403,9 @@ export default defineToolbarApp({
                     line-height: 1.5;
                     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
                 }
-                #${TOOLTIP_ID} .mjk-tt-title { margin-bottom: 6px; font-size: 13px; }
+                #${TOOLTIP_ID} .mjk-tt-title { font-size: 13px; }
                 #${TOOLTIP_ID} .mjk-tt-title code { color: rgba(224, 204, 250, 1); }
+                #${TOOLTIP_ID} .mjk-tt-cps { color: gray; margin-bottom: 6px; }
                 #${TOOLTIP_ID} .mjk-tt-row {
                     display: flex;
                     align-items: center;
@@ -422,7 +423,7 @@ export default defineToolbarApp({
                     min-width: 40px;
                     font-variant-numeric: tabular-nums;
                 }
-                #${TOOLTIP_ID} .mjk-tt-meta { color: rgba(145, 152, 173, 1); margin-top: 2px; }
+                #${TOOLTIP_ID} .mjk-tt-meta { color: rgba(145, 152, 173, 1); }
             `;
             document.head.appendChild(style);
         }
@@ -521,21 +522,27 @@ export default defineToolbarApp({
             }
 
             tooltip.innerHTML = `
-                <div class="mjk-tt-title">${escapeHtml(
-                    el.textContent ?? "",
-                )} <code>${escapeHtml(el.tagName.toLowerCase())}</code></div>
-                ${rows
-                    .map(
-                        (r) => `
-                            <div class="mjk-tt-row">
-                                <span class="mjk-swatch" style="background:${r.hex};width:10px;height:10px;border-radius:3px;"></span>
-                                <code>${escapeHtml(r.tag)}</code>
-                                <span class="mjk-tt-score">${r.score.toFixed(3)}</span>
-                                <span class="mjk-tt-pct">${r.pct}%</span>
-                            </div>
-                        `,
-                    )
-                    .join("")}
+                <div class="mjk-tt-title">
+                    ${escapeHtml(el.textContent ?? "")}
+                    <code>${
+                        el.tagName.toLowerCase() == 'mjk-debug' 
+                            ? '' : escapeHtml(el.tagName.toLowerCase())
+                    }</code>
+                </div>
+                <div class="mjk-tt-cps">${
+                [...el.textContent]
+                    .map((x) => 'U+' + x.codePointAt(0)!.toString(16)
+                        .padStart(4, '0').toUpperCase())
+                    .join(' ')
+                }</div>
+                ${rows.map((r) => `
+                    <div class="mjk-tt-row">
+                        <span class="mjk-swatch" style="background:${r.hex};width:10px;height:10px;border-radius:3px;"></span>
+                        <code>${escapeHtml(r.tag)}</code>
+                        <span class="mjk-tt-score">${r.score.toFixed(3)}</span>
+                        <span class="mjk-tt-pct">${r.pct}%</span>
+                    </div>
+                `).join("")}
                 ${matches ? `<div class="mjk-tt-meta">explicit matches: ${escapeHtml(matches)}</div>` : ""}
                 ${flags ? `<div class="mjk-tt-meta">flags: ${escapeHtml(flags)}</div>` : ""}
                 ${classes.length ? `<div class="mjk-tt-meta">classes: ${escapeHtml(classes.join(" "))}</div>` : ""}
